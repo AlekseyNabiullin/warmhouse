@@ -1,0 +1,61 @@
+@startuml ER_Logical_WarmHouse
+title Логическая ER-диаграмма — «Тёплый дом»
+
+entity User {
+  * id : UUID <<PK>>
+  --
+  * email : string
+  * name : string
+  created_at : datetime
+}
+
+entity House {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * name : string
+  address : string
+}
+
+entity DeviceType {
+  * id : UUID <<PK>>
+  --
+  * name : string
+  * category : string
+  protocol : string
+}
+
+entity Module {
+  * id : UUID <<PK>>
+  --
+  * house_id : UUID <<FK>>
+  * name : string
+  * domain : string
+}
+
+entity Device {
+  * id : UUID <<PK>>
+  --
+  * type_id : UUID <<FK>>
+  * module_id : UUID <<FK>>
+  * serial_number : string
+  * status : string
+}
+
+entity TelemetryData {
+  * id : UUID <<PK>>
+  --
+  * device_id : UUID <<FK>>
+  * metric : string
+  * value : float
+  unit : string
+  * recorded_at : datetime
+}
+
+User ||--o{ House : owns
+House ||--o{ Module : contains
+Module ||--o{ Device : includes
+DeviceType ||--o{ Device : classifies
+Device ||--o{ TelemetryData : generates
+
+@enduml
