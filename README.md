@@ -287,58 +287,46 @@ Device Gateway публикует в MQTT; Telemetry Service сохраняет 
 
 # Задание 5. Работа с docker и docker-compose
 
-Перейдите в apps.
+### Зачем это нужно
 
-Там находится приложение-монолит для работы с датчиками температуры. В README.md описано как запустить решение.
+Монолит `smart_home` хранит датчики в PostgreSQL, а «живую» температуру берёт у внешнего сервиса.  
+`temperature-api` имитирует удалённый датчик: на каждый запрос отдаёт случайную температуру.
 
-Вам нужно:
+### Что сделано
 
-1) сделать простое приложение temperature-api на любом удобном для вас языке программирования, которое при запросе /temperature?location= будет отдавать рандомное значение температуры.
+| Сервис | Порт | Роль |
+|---|---|---|
+| **postgres** | 5432 | База для `smart_home`; схема из `./smart_home/init.sql` |
+| **temperature-api** | 8081 | Имитация датчика (Go) |
+| **app** (smart_home) | 8080 | Монолит: датчики + вызов temperature-api |
 
-Locations - название комнаты, sensorId - идентификатор названия комнаты
+**temperature-api** (Go, каталог [`apps/temperature-api`](apps/temperature-api)):
 
-```
-	// If no location is provided, use a default based on sensor ID
-	if location == "" {
-		switch sensorID {
-		case "1":
-			location = "Living Room"
-		case "2":
-			location = "Bedroom"
-		case "3":
-			location = "Kitchen"
-		default:
-			location = "Unknown"
-		}
-	}
+- `GET /temperature?location=Living%20Room` — температура по комнате
+- `GET /temperature/{id}` — температура по id датчика (этот путь вызывает `smart_home` при Get All Sensors)
 
-	// If no sensor ID is provided, generate one based on location
-	if sensorID == "" {
-		switch location {
-		case "Living Room":
-			sensorID = "1"
-		case "Bedroom":
-			sensorID = "2"
-		case "Kitchen":
-			sensorID = "3"
-		default:
-			sensorID = "0"
-		}
-	}
+Маппинг комнат: Living Room ↔ 1, Bedroom ↔ 2, Kitchen ↔ 3.
+
+**postgres** в [`apps/docker-compose.yml`](apps/docker-compose.yml): пользователь/пароль `postgres`/`postgres`, volume с данными, healthcheck, монтирование `./smart_home/init.sql` в `/docker-entrypoint-initdb.d/`.
+
+### Как запустить
+
+```bash
+cd apps
+docker compose up --build
 ```
 
-2) Приложение следует упаковать в Docker и добавить в docker-compose. Порт по умолчанию должен быть 8081
+### Как проверить
 
-3) Кроме того для smart_home приложения требуется база данных - добавьте в docker-compose файл настройки для запуска postgres с указанием скрипта инициализации ./smart_home/init.sql
+1. Postman-коллекция [`apps/smarthome-api.postman_collection.json`](apps/smarthome-api.postman_collection.json)
+2. **Create Sensor** — создать датчик с `"type": "temperature"`
+3. Несколько раз **Get All Sensors** — поле `value` должно меняться (новый рандом от temperature-api)
 
-Для проверки можно использовать Postman коллекцию smarthome-api.postman_collection.json и вызвать:
+Прямая проверка датчика:
 
-- Create Sensor
-- Get All Sensors
-
-Должно при каждом вызове отображаться разное значение температуры
-
-Ревьюер будет проверять точно так же.
+```bash
+curl "http://localhost:8081/temperature?location=Living%20Room"
+```
 
 # Технические руководства: рендеринг диаграмм
 
