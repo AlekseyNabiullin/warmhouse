@@ -141,11 +141,149 @@
 
 ### 1. Тип API
 
-Укажите, какой тип API вы будете использовать для взаимодействия микросервисов. Объясните своё решение.
+В экосистеме «Тёплый дом» используются **два типа API** — каждый для своей задачи.
+
+| Тип | Когда используем | Пример |
+|---|---|---|
+| **REST (OpenAPI)** | Синхронный запрос: клиенту нужен ответ сразу | «Какой статус отопления?», «Покажи карточку устройства» |
+| **AsyncAPI (MQTT)** | Асинхронное сообщение: ждать ответа не нужно | «Датчик прислал новую температуру», «Команда ON ушла на Device Gateway» |
+
+**Почему так.**  
+Пользователь через Web App ждёт понятный HTTP-ответ (статус, данные устройства) — для этого удобен REST.  
+А поток измерений и доставка команд на устройства не должны блокировать UI: Device Gateway, Telemetry и доменные сервисы обмениваются MQTT-сообщениями. Это как раз зона AsyncAPI.
+
+Связь с диаграммами из Задания 2: REST идёт через API Gateway → Heating / Device Platform / Telemetry; асинхронные сообщения — через MQTT Broker.
 
 ### 2. Документация API
 
-Здесь приложите ссылки на документацию API для микросервисов, которые вы спроектировали в первой части проектной работы. Для документирования используйте Swagger/OpenAPI или AsyncAPI.
+Спроектированы **5 операций** для ключевых микросервисов ландшафта To-Be.
+
+| # | Сервис | Тип | Операция | Зачем |
+|---|---|---|---|---|
+| 1 | Device Platform | REST | `GET /api/v1/devices/{deviceId}` | Получить информацию об устройстве |
+| 2 | Device Platform | REST | `PATCH /api/v1/devices/{deviceId}/status` | Обновить состояние устройства |
+| 3 | Heating Service | REST | `POST /api/v1/heating/modules/{moduleId}/commands` | Отправить команду отоплению |
+| 4 | Heating Service | REST | `GET /api/v1/heating/modules/{moduleId}/status` | Получить статус модуля тепла |
+| 5 | Telemetry Service | REST | `GET /api/v1/telemetry/devices/{deviceId}/latest` | Прочитать последнее измерение |
+
+Плюс MQTT-топики (AsyncAPI): `events/telemetry/{deviceId}`, `commands/heating/{deviceId}`, `events/device/{deviceId}/ack`.
+
+#### Исходники спецификаций
+
+| Файл | Формат | Как открыть |
+|---|---|---|
+| [docs/api/openapi-devices.yaml](docs/api/openapi-devices.yaml) | OpenAPI 3 | Спецификация OpenAPI — открыть YAML-файл |
+| [docs/api/openapi-heating.yaml](docs/api/openapi-heating.yaml) | OpenAPI 3 | Спецификация OpenAPI — открыть YAML-файл |
+| [docs/api/openapi-telemetry.yaml](docs/api/openapi-telemetry.yaml) | OpenAPI 3 | Спецификация OpenAPI — открыть YAML-файл |
+| [docs/api/asyncapi-events.yaml](docs/api/asyncapi-events.yaml) | AsyncAPI 2.6 | [AsyncAPI Studio](https://studio.asyncapi.com/) → открыть файл |
+
+В каждой спецификации уже есть: схемы JSON запроса/ответа, коды HTTP (`200`, `202`, `400`, `404`, `500`) и блоки `examples`.
+
+#### Краткие контракты (сводка)
+
+**1. Получить устройство — `GET /api/v1/devices/{deviceId}`**
+
+- Запрос: path-параметр `deviceId` (тело не нужно).
+- Ответ `200`: JSON с полями `id`, `typeId`, `moduleId`, `serialNumber`, `status`, …
+- Ошибки: `404` — устройство не найдено; `500` — ошибка сервера.
+
+Пример ответа:
+
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "typeName": "Temperature Sensor",
+  "moduleId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+  "serialNumber": "WH-TEMP-0042",
+  "status": "online",
+  "protocol": "mqtt"
+}
+```
+
+**2. Обновить статус — `PATCH /api/v1/devices/{deviceId}/status`**
+
+- Запрос:
+
+```json
+{ "status": "online" }
+```
+
+- Ответ `200`: обновлённая карточка устройства.
+- Ошибки: `400` — неверный `status`; `404` — устройство не найдено; `500` — ошибка сервера.
+
+**3. Команда отоплению — `POST /api/v1/heating/modules/{moduleId}/commands`**
+
+- Запрос:
+
+```json
+{ "action": "ON" }
+```
+
+- Ответ `202 Accepted`: команда принята и уйдёт в MQTT (`commands/heating/{deviceId}`), устройство отработает позже.
+- Ошибки: `400` — невалидная команда; `404` — модуль не найден; `500` — ошибка сервера.
+
+Пример ответа:
+
+```json
+{
+  "commandId": "c0ffee00-1111-2222-3333-444444444444",
+  "moduleId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+  "action": "ON",
+  "desiredState": "ON",
+  "status": "accepted"
+}
+```
+
+**4. Статус отопления — `GET /api/v1/heating/modules/{moduleId}/status`**
+
+- Ответ `200`:
+
+```json
+{
+  "moduleId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+  "desiredState": "ON",
+  "actualState": "ON",
+  "targetTemperature": 22.5,
+  "currentTemperature": 21.8,
+  "updatedAt": "2026-07-26T10:15:30Z"
+}
+```
+
+- Ошибки: `404`, `500`.
+
+**5. Последняя телеметрия — `GET /api/v1/telemetry/devices/{deviceId}/latest`**
+
+- Запрос: `deviceId` в path; опционально `?metric=temperature`.
+- Ответ `200`:
+
+```json
+{
+  "deviceId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "metric": "temperature",
+  "value": 21.8,
+  "unit": "C",
+  "recordedAt": "2026-07-26T10:14:55Z"
+}
+```
+
+- Ошибки: `404` — измерений ещё нет; `500` — ошибка сервера.
+
+**Асинхронно: новое измерение (`events/telemetry/{deviceId}`)**
+
+Device Gateway публикует в MQTT; Telemetry Service сохраняет точку в БД.
+
+```json
+{
+  "eventId": "e1111111-2222-3333-4444-555555555555",
+  "deviceId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "metric": "temperature",
+  "value": 21.8,
+  "unit": "C",
+  "recordedAt": "2026-07-26T10:14:55Z"
+}
+```
+
+Так REST и события дополняют друг друга: HTTP — для запросов пользователя, MQTT — для потока данных и команд устройств.
 
 # Задание 5. Работа с docker и docker-compose
 
@@ -201,5 +339,80 @@ Locations - название комнаты, sensorId - идентификато
 Должно при каждом вызове отображаться разное значение температуры
 
 Ревьюер будет проверять точно так же.
+
+# Технические руководства: рендеринг диаграмм
+
+Диаграммы в проекте пишутся на **PlantUML** (файлы `.puml`) и экспортируются в **PNG** для вставки в README.
+
+### Где лежат файлы
+
+| Тип | Исходники | Картинки / просмотр |
+|---|---|---|
+| C4 (Context, Containers, Components, Code) | [`docs/c4/*.puml`](docs/c4/) | [`docs/c4/*.png`](docs/c4/) |
+| ER | [`docs/er/er-logical.puml`](docs/er/er-logical.puml) | [`docs/er/er-logical.png`](docs/er/er-logical.png) |
+| API (OpenAPI / AsyncAPI) | [`docs/api/*.yaml`](docs/api/) | OpenAPI / AsyncAPI Studio |
+
+C4-диаграммы подключают библиотеку [C4-PlantUML](https://github.com/plantuml-stdlib/C4-PlantUML) через `!include https://...` — для рендера нужен доступ в интернет.
+
+### Что установить
+
+Нужны Java, Graphviz и PlantUML. На macOS через Homebrew:
+
+```bash
+brew install openjdk graphviz plantuml
+plantuml -version
+```
+
+Проверьте, что в выводе есть `GraphViz` и строка `Installation seems OK`.
+
+### Как срендерить одну диаграмму
+
+```bash
+# PNG рядом с .puml (имя файла берётся из строки @startuml Имя)
+plantuml -tpng docs/er/er-logical.puml
+
+# Если PNG получился с другим именем — переименуйте под соглашение проекта
+mv docs/er/ER_Logical_WarmHouse.png docs/er/er-logical.png
+```
+
+Пример для C4:
+
+```bash
+plantuml -tpng docs/c4/c4-context-as-is.puml
+# при необходимости: mv docs/c4/C4_Context_WarmHouse.png docs/c4/c4-context-as-is.png
+```
+
+### Как срендерить все диаграммы сразу
+
+```bash
+# C4 → PNG в ту же папку
+plantuml -tpng docs/c4/*.puml
+
+# ER → PNG в ту же папку
+plantuml -tpng docs/er/*.puml
+```
+
+Если PlantUML положил PNG не туда или с именем из `@startuml`, переименуйте файлы так, чтобы они совпадали со ссылками в этом README (например `c4-containers-to-be.png`, `er-logical.png`).
+
+### Как вставить картинку в README
+
+```markdown
+![Краткое описание диаграммы](docs/c4/c4-context-as-is.png)
+```
+
+Исходник рядом полезно указать ссылкой:
+
+```markdown
+Исходник: [docs/er/er-logical.puml](docs/er/er-logical.puml)
+```
+
+### Частые проблемы
+
+| Проблема | Что сделать |
+|---|---|
+| Ошибка Graphviz / нет `dot` | `brew install graphviz` |
+| C4: не скачивается `!include` | Проверьте интернет; повторите команду |
+| PNG называется не как `.puml` | Имя берётся из `@startuml ...` — переименуйте или задайте то же имя в `@startuml` |
+| Картинка слишком большая / обрезана | Увеличьте лимит: `export PLANTUML_LIMIT_SIZE=8192` и пересоберите |
 
 

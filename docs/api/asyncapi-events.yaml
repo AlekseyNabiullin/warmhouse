@@ -1,0 +1,212 @@
+asyncapi: 2.6.0
+info:
+  title: WarmHouse Event API
+  version: 1.0.0
+  description: |
+    **AsyncAPI** описывает асинхронное взаимодействие через MQTT.
+
+    Зачем нужен: когда устройству не нужно ждать HTTP-ответа «здесь и сейчас».
+    Пример — датчик прислал новую температуру: Device Gateway публикует событие,
+    а Telemetry Service и Automation Service читают его из MQTT-топика.
+
+    Синхронные REST API (Devices / Heating / Telemetry) описаны отдельно в OpenAPI.
+
+servers:
+  mqtt-local:
+    url: mqtt://broker.warmhouse.local:1883
+    protocol: mqtt
+    protocolVersion: '5.0'
+    description: Учебный MQTT-брокер экосистемы «Тёплый дом»
+
+defaultContentType: application/json
+
+channels:
+  events/telemetry/{deviceId}:
+    description: |
+      Новое измерение с устройства (температура и др.).
+      **Publisher:** Device Gateway
+      **Subscribers:** Telemetry Service, Automation Service
+    parameters:
+      deviceId:
+        description: Идентификатор устройства-источника
+        schema:
+          type: string
+          format: uuid
+    publish:
+      operationId: publishTelemetryMeasurement
+      summary: Device Gateway публикует измерение
+      message:
+        $ref: '#/components/messages/TelemetryMeasurement'
+    subscribe:
+      operationId: consumeTelemetryMeasurement
+      summary: Сервисы читают новое измерение
+      message:
+        $ref: '#/components/messages/TelemetryMeasurement'
+
+  commands/heating/{deviceId}:
+    description: |
+      Команда для модуля отопления.
+      **Publisher:** Heating Service (после REST POST)
+      **Subscriber:** Device Gateway (доставляет на устройство или в легаси-адаптер)
+    parameters:
+      deviceId:
+        description: Идентификатор целевого устройства
+        schema:
+          type: string
+          format: uuid
+    publish:
+      operationId: publishHeatingCommand
+      summary: Heating Service публикует команду в MQTT
+      message:
+        $ref: '#/components/messages/HeatingCommand'
+    subscribe:
+      operationId: consumeHeatingCommand
+      summary: Device Gateway забирает команду
+      message:
+        $ref: '#/components/messages/HeatingCommand'
+
+  events/device/{deviceId}/ack:
+    description: |
+      Подтверждение, что устройство обработало команду.
+      **Publisher:** Device Gateway
+      **Subscriber:** Heating Service
+    parameters:
+      deviceId:
+        description: Идентификатор устройства, подтвердившего команду
+        schema:
+          type: string
+          format: uuid
+    publish:
+      operationId: publishDeviceAcknowledgement
+      summary: Device Gateway публикует подтверждение
+      message:
+        $ref: '#/components/messages/DeviceAcknowledgement'
+    subscribe:
+      operationId: consumeDeviceAcknowledgement
+      summary: Heating Service получает подтверждение
+      message:
+        $ref: '#/components/messages/DeviceAcknowledgement'
+
+components:
+  messages:
+    TelemetryMeasurement:
+      name: TelemetryMeasurement
+      title: Событие нового измерения
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TelemetryMeasurementPayload'
+      examples:
+        - name: temperatureReading
+          summary: Датчик прислал температуру 21.8 °C
+          payload:
+            eventId: "e1111111-2222-3333-4444-555555555555"
+            deviceId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            metric: "temperature"
+            value: 21.8
+            unit: "C"
+            recordedAt: "2026-07-26T10:14:55Z"
+
+    HeatingCommand:
+      name: HeatingCommand
+      title: Команда отопления
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeatingCommandPayload'
+      examples:
+        - name: turnHeatingOn
+          summary: Включить отопление
+          payload:
+            commandId: "c0ffee00-1111-2222-3333-444444444444"
+            moduleId: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+            deviceId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            action: "ON"
+            requestedAt: "2026-07-26T10:15:30Z"
+
+    DeviceAcknowledgement:
+      name: DeviceAcknowledgement
+      title: Подтверждение команды устройством
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DeviceAcknowledgementPayload'
+      examples:
+        - name: heatingEnabled
+          summary: Реле включило отопление
+          payload:
+            eventId: "d1111111-2222-3333-4444-555555555555"
+            commandId: "c0ffee00-1111-2222-3333-444444444444"
+            deviceId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            state: "ON"
+            occurredAt: "2026-07-26T10:15:32Z"
+
+  schemas:
+    TelemetryMeasurementPayload:
+      type: object
+      required: [eventId, deviceId, metric, value, recordedAt]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Идентификатор события (для идемпотентности)
+        deviceId:
+          type: string
+          format: uuid
+          description: Устройство-источник измерения
+        metric:
+          type: string
+          description: Имя метрики
+          example: temperature
+        value:
+          type: number
+          format: float
+        unit:
+          type: string
+          example: C
+        recordedAt:
+          type: string
+          format: date-time
+
+    HeatingCommandPayload:
+      type: object
+      required: [commandId, moduleId, deviceId, action, requestedAt]
+      properties:
+        commandId:
+          type: string
+          format: uuid
+          description: Идентификатор команды для защиты от повторного выполнения при QoS 1
+        moduleId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+          description: Целевое реле / актуатор
+        action:
+          type: string
+          enum: [ON, OFF, SET_TEMPERATURE]
+        targetTemperature:
+          type: number
+          format: float
+          description: Только для SET_TEMPERATURE
+        requestedAt:
+          type: string
+          format: date-time
+
+    DeviceAcknowledgementPayload:
+      type: object
+      required: [eventId, commandId, deviceId, state, occurredAt]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        commandId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [ON, OFF, ERROR]
+        occurredAt:
+          type: string
+          format: date-time

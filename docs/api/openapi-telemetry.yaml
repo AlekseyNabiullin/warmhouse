@@ -1,0 +1,124 @@
+openapi: 3.0.3
+info:
+  title: Telemetry Service API
+  description: |
+    REST API микросервиса **Telemetry Service**.
+
+    Зачем нужен: Web App и другие сервисы **читают** последние измерения
+    (температура и т.п.). Запись новых точек идёт асинхронно из MQTT
+    (см. AsyncAPI `asyncapi-events.yaml`).
+  version: 1.0.0
+  contact:
+    name: Команда «Тёплый дом»
+
+servers:
+  - url: https://api.warmhouse.local/telemetry
+    description: Через API Gateway (учебный стенд)
+
+tags:
+  - name: Telemetry
+    description: Чтение телеметрии устройств
+
+paths:
+  /api/v1/telemetry/devices/{deviceId}/latest:
+    get:
+      tags: [Telemetry]
+      summary: Получить последнее измерение устройства
+      description: |
+        Возвращает самую свежую запись TelemetryData для устройства.
+        Удобно для карточки «текущая температура в доме».
+      operationId: getLatestTelemetry
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          description: Идентификатор устройства (UUID)
+          schema:
+            type: string
+            format: uuid
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        - name: metric
+          in: query
+          required: false
+          description: Имя метрики. Если не указано — возвращается последнее любое измерение.
+          schema:
+            type: string
+            enum: [temperature, humidity]
+          example: temperature
+      responses:
+        '200':
+          description: Последнее измерение найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemetryPoint'
+              examples:
+                temperature:
+                  summary: Температура с датчика
+                  value:
+                    id: "99999999-aaaa-bbbb-cccc-dddddddddddd"
+                    deviceId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                    metric: "temperature"
+                    value: 21.8
+                    unit: "C"
+                    recordedAt: "2026-07-26T10:14:55Z"
+        '404':
+          description: Устройство или измерения не найдены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                noData:
+                  value:
+                    code: "TELEMETRY_NOT_FOUND"
+                    message: "Для устройства ещё нет измерений"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                serverError:
+                  value:
+                    code: "INTERNAL_ERROR"
+                    message: "Ошибка чтения из базы телеметрии"
+
+components:
+  schemas:
+    TelemetryPoint:
+      type: object
+      required: [id, deviceId, metric, value, recordedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        metric:
+          type: string
+          description: Имя измеряемой величины
+          example: temperature
+        value:
+          type: number
+          format: float
+          description: Числовое значение
+        unit:
+          type: string
+          description: Единица измерения
+          example: C
+        recordedAt:
+          type: string
+          format: date-time
+          description: Когда датчик сделал измерение
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

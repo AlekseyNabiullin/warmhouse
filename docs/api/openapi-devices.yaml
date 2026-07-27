@@ -1,0 +1,212 @@
+openapi: 3.0.3
+info:
+  title: Device Platform API
+  description: |
+    REST API микросервиса **Device Platform**.
+
+    Зачем нужен: другие сервисы и Web App узнают, какое устройство
+    подключено к дому, и могут обновить его статус (online / offline / error).
+
+    Тип взаимодействия: **синхронный** — клиент ждёт ответ сразу.
+  version: 1.0.0
+  contact:
+    name: Команда «Тёплый дом»
+
+servers:
+  - url: https://api.warmhouse.local/devices
+    description: Через API Gateway (учебный стенд)
+
+tags:
+  - name: Devices
+    description: Информация об устройствах и их состояние
+
+paths:
+  /api/v1/devices/{deviceId}:
+    get:
+      tags: [Devices]
+      summary: Получить информацию об устройстве
+      description: |
+        Возвращает карточку устройства: тип, модуль, серийный номер и статус.
+        Используется Web App и доменными сервисами (Heating, Lighting и т.д.).
+      operationId: getDevice
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Устройство найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              examples:
+                temperatureSensor:
+                  summary: Датчик температуры в гостиной
+                  value:
+                    id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                    typeId: "11111111-2222-3333-4444-555555555555"
+                    typeName: "Temperature Sensor"
+                    moduleId: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+                    moduleName: "Отопление — дом Ивановых"
+                    serialNumber: "WH-TEMP-0042"
+                    status: "online"
+                    protocol: "mqtt"
+        '404':
+          description: Устройство не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFound:
+                  value:
+                    code: "DEVICE_NOT_FOUND"
+                    message: "Устройство с id a1b2c3d4-e5f6-7890-abcd-ef1234567890 не найдено"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                serverError:
+                  value:
+                    code: "INTERNAL_ERROR"
+                    message: "Не удалось прочитать устройство из базы данных"
+
+  /api/v1/devices/{deviceId}/status:
+    patch:
+      tags: [Devices]
+      summary: Обновить состояние устройства
+      description: |
+        Меняет статус устройства (например, после подключения или потери связи).
+        Обычно вызывается Device Gateway, когда устройство вышло online или offline.
+      operationId: updateDeviceStatus
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDeviceStatusRequest'
+            examples:
+              goOnline:
+                summary: Устройство снова на связи
+                value:
+                  status: "online"
+              goOffline:
+                summary: Связь потеряна
+                value:
+                  status: "offline"
+      responses:
+        '200':
+          description: Статус обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              examples:
+                updated:
+                  value:
+                    id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                    typeId: "11111111-2222-3333-4444-555555555555"
+                    typeName: "Temperature Sensor"
+                    moduleId: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+                    moduleName: "Отопление — дом Ивановых"
+                    serialNumber: "WH-TEMP-0042"
+                    status: "online"
+                    protocol: "mqtt"
+        '400':
+          description: Некорректное тело запроса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                badRequest:
+                  value:
+                    code: "VALIDATION_ERROR"
+                    message: "Поле status должно быть одним из: online, offline, error"
+        '404':
+          description: Устройство не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFound:
+                  value:
+                    code: "DEVICE_NOT_FOUND"
+                    message: "Устройство не найдено"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  parameters:
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      description: Идентификатор устройства (UUID)
+      schema:
+        type: string
+        format: uuid
+      example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+  schemas:
+    Device:
+      type: object
+      required: [id, typeId, moduleId, serialNumber, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Идентификатор устройства
+        typeId:
+          type: string
+          format: uuid
+          description: Ссылка на тип устройства (DeviceType)
+        typeName:
+          type: string
+          description: Человекочитаемое имя типа
+        moduleId:
+          type: string
+          format: uuid
+          description: Модуль, к которому относится устройство
+        moduleName:
+          type: string
+          description: Название модуля
+        serialNumber:
+          type: string
+          description: Серийный номер с корпуса / партнёра
+        status:
+          type: string
+          enum: [online, offline, error]
+          description: Текущее состояние связи / работы
+        protocol:
+          type: string
+          description: Протокол подключения (mqtt, modbus и т.п.)
+
+    UpdateDeviceStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [online, offline, error]
+          description: Новый статус устройства
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Машиночитаемый код ошибки
+        message:
+          type: string
+          description: Пояснение для разработчика / UI

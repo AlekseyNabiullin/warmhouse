@@ -1,0 +1,243 @@
+openapi: 3.0.3
+info:
+  title: Heating Service API
+  description: |
+    REST API микросервиса **Heating Service**.
+
+    Зачем нужен: пользователь (через Web App) включает/выключает отопление
+    и смотрит текущий статус модуля тепла.
+
+    Тип взаимодействия: **синхронный** на входе (HTTP).
+    Сама команда до устройства уходит **асинхронно** через MQTT → Device Gateway
+    (см. AsyncAPI). Поэтому на POST команда часто отвечает `202 Accepted`.
+  version: 1.0.0
+  contact:
+    name: Команда «Тёплый дом»
+
+servers:
+  - url: https://api.warmhouse.local/heating
+    description: Через API Gateway (учебный стенд)
+
+tags:
+  - name: Heating
+    description: Управление модулем отопления
+
+paths:
+  /api/v1/heating/modules/{moduleId}/commands:
+    post:
+      tags: [Heating]
+      summary: Отправить команду модулю отопления
+      description: |
+        Принимает команду (ON / OFF / SET_TEMPERATURE), сохраняет желаемое состояние
+        и публикует MQTT-сообщение в топик `commands/heating/{deviceId}`.
+
+        Устройство применит команду позже через Device Gateway — поэтому ответ не ждёт
+        фактического включения реле.
+      operationId: sendHeatingCommand
+      parameters:
+        - $ref: '#/components/parameters/ModuleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeatingCommandRequest'
+            examples:
+              turnOn:
+                summary: Включить отопление
+                value:
+                  action: "ON"
+              turnOff:
+                summary: Выключить отопление
+                value:
+                  action: "OFF"
+              setTemperature:
+                summary: Задать целевую температуру
+                value:
+                  action: "SET_TEMPERATURE"
+                  targetTemperature: 22.5
+      responses:
+        '202':
+          description: Команда принята и поставлена в очередь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeatingCommandResponse'
+              examples:
+                accepted:
+                  summary: Команда ON принята
+                  value:
+                    commandId: "c0ffee00-1111-2222-3333-444444444444"
+                    moduleId: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+                    action: "ON"
+                    desiredState: "ON"
+                    status: "accepted"
+        '400':
+          description: Некорректная команда
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                badRequest:
+                  value:
+                    code: "VALIDATION_ERROR"
+                    message: "Для action=SET_TEMPERATURE нужно поле targetTemperature"
+        '404':
+          description: Модуль отопления не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFound:
+                  value:
+                    code: "MODULE_NOT_FOUND"
+                    message: "Модуль отопления не найден"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/heating/modules/{moduleId}/status:
+    get:
+      tags: [Heating]
+      summary: Получить статус модуля отопления
+      description: |
+        Возвращает желаемое и фактическое состояние модуля тепла.
+        Фактическое состояние обновляется, когда Device Gateway публикует ack в MQTT.
+      operationId: getHeatingStatus
+      parameters:
+        - $ref: '#/components/parameters/ModuleId'
+      responses:
+        '200':
+          description: Статус модуля
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeatingStatus'
+              examples:
+                heatingOn:
+                  summary: Отопление включено
+                  value:
+                    moduleId: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+                    desiredState: "ON"
+                    actualState: "ON"
+                    targetTemperature: 22.5
+                    currentTemperature: 21.8
+                    updatedAt: "2026-07-26T10:15:30Z"
+                pending:
+                  summary: Команда принята, устройство ещё не подтвердило
+                  value:
+                    moduleId: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+                    desiredState: "ON"
+                    actualState: "OFF"
+                    targetTemperature: 22.5
+                    currentTemperature: 18.2
+                    updatedAt: "2026-07-26T10:15:30Z"
+        '404':
+          description: Модуль не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFound:
+                  value:
+                    code: "MODULE_NOT_FOUND"
+                    message: "Модуль отопления не найден"
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  parameters:
+    ModuleId:
+      name: moduleId
+      in: path
+      required: true
+      description: Идентификатор модуля отопления (UUID из сущности Module)
+      schema:
+        type: string
+        format: uuid
+      example: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+
+  schemas:
+    HeatingCommandRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [ON, OFF, SET_TEMPERATURE]
+          description: Команда для модуля отопления
+        targetTemperature:
+          type: number
+          format: float
+          minimum: 5
+          maximum: 35
+          description: Нужна только для action=SET_TEMPERATURE (°C)
+
+    HeatingCommandResponse:
+      type: object
+      required: [commandId, moduleId, action, desiredState, status]
+      properties:
+        commandId:
+          type: string
+          format: uuid
+          description: Идентификатор принятой команды
+        moduleId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [ON, OFF, SET_TEMPERATURE]
+        desiredState:
+          type: string
+          enum: [ON, OFF]
+          description: Желаемое состояние после команды
+        status:
+          type: string
+          enum: [accepted]
+          description: Команда принята сервисом, доставка устройству идёт асинхронно
+
+    HeatingStatus:
+      type: object
+      required: [moduleId, desiredState, actualState, updatedAt]
+      properties:
+        moduleId:
+          type: string
+          format: uuid
+        desiredState:
+          type: string
+          enum: [ON, OFF]
+          description: Что хочет пользователь / система
+        actualState:
+          type: string
+          enum: [ON, OFF, UNKNOWN]
+          description: Что подтвердило устройство
+        targetTemperature:
+          type: number
+          format: float
+          description: Уставка температуры (°C)
+        currentTemperature:
+          type: number
+          format: float
+          description: Последняя известная температура (°C)
+        updatedAt:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
