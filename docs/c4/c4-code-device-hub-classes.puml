@@ -1,0 +1,86 @@
+@startuml c4-code-device-hub-classes
+title Code: классы — ядро Device Gateway (доставка команд)
+
+class DeviceSession {
+  +deviceId: UUID
+  +homeId: UUID
+  +protocol: ProtocolType
+  +online: bool
+  +lastSeen: DateTime
+  +markOnline()
+  +markOffline()
+}
+
+class DeviceCommand {
+  +commandId: UUID
+  +deviceId: UUID
+  +action: string
+  +payload: Map
+  +createdAt: DateTime
+}
+
+class DeviceEvent {
+  +eventId: UUID
+  +deviceId: UUID
+  +type: string
+  +payload: Map
+  +receivedAt: DateTime
+}
+
+interface ProtocolAdapter {
+  +supports(protocol: ProtocolType): bool
+  +encode(command: DeviceCommand): bytes
+  +decode(raw: bytes): DeviceEvent
+}
+
+class MqttProtocolAdapter {
+  +supports(protocol): bool
+  +encode(command): bytes
+  +decode(raw): DeviceEvent
+}
+
+class PartnerProtocolAdapter {
+  +supports(protocol): bool
+  +encode(command): bytes
+  +decode(raw): DeviceEvent
+}
+
+class LegacyProtocolAdapter {
+  +supports(protocol): bool
+  +sendSynchronously(command): DeviceEvent
+}
+
+class CommandDispatcher {
+  -adapters: ProtocolAdapter[]
+  -sessions: SessionManager
+  +dispatch(command: DeviceCommand): void
+}
+
+class SessionManager {
+  -repository: DeviceRepository
+  +get(deviceId): DeviceSession
+  +upsert(session: DeviceSession): void
+}
+
+class EventPublisher {
+  +publishDeviceEvent(event: DeviceEvent): void
+}
+
+class MqttIngress {
+  +onMessage(topic, payload): void
+}
+
+CommandDispatcher --> ProtocolAdapter : выбирает адаптер
+CommandDispatcher --> SessionManager : проверяет online
+ProtocolAdapter <|.. MqttProtocolAdapter
+ProtocolAdapter <|.. PartnerProtocolAdapter
+ProtocolAdapter <|.. LegacyProtocolAdapter
+MqttIngress --> ProtocolAdapter : decode
+MqttIngress --> SessionManager : обновляет сессию
+MqttIngress --> EventPublisher : нормализованное событие
+SessionManager --> DeviceSession : управляет
+CommandDispatcher --> DeviceCommand : использует
+LegacyProtocolAdapter --> EventPublisher : синхронный ответ
+EventPublisher --> DeviceEvent : публикует в MQTT
+
+@enduml

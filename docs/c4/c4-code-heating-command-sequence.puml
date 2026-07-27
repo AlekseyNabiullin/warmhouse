@@ -1,0 +1,45 @@
+@startuml c4-code-heating-command-sequence
+title Code: последовательность — пользователь включает отопление
+
+actor "Пользователь" as User
+participant "Web App" as Web
+participant "API Gateway" as GW
+participant "Identity Service" as Id
+participant "Heating Service" as Heat
+participant "MQTT Broker" as MQTT
+participant "Device Gateway" as DeviceGateway
+participant "Новое реле\nотопления" as Device
+participant "Старое реле\nотопления" as LegacyDevice
+
+User -> Web: Включить отопление
+Web -> GW: POST /heating/{homeId}/on
+GW -> Id: Проверить JWT и доступ к дому
+Id --> GW: OK (authorized)
+GW -> Heat: POST /api/v1/heating/on
+Heat -> Heat: Command Handler + State Manager\n(desired = ON)
+Heat -> MQTT: publish commands/heating/{deviceId}\n{commandId, action: ON}
+Heat --> GW: 202 Accepted
+GW --> Web: 202 Accepted
+
+MQTT -> DeviceGateway: commands/heating/{deviceId}
+DeviceGateway -> DeviceGateway: Command Dispatcher\n+ Protocol Adapter
+alt Устройство уже поддерживает MQTT
+    DeviceGateway -> MQTT: publish devices/{id}/commands
+    MQTT -> Device: Команда ON
+    Device --> MQTT: ack + state=ON
+    MQTT -> DeviceGateway: ack
+else Старое устройство в период миграции
+    DeviceGateway -> LegacyDevice: Синхронная команда ON
+    LegacyDevice --> DeviceGateway: state=ON
+end
+DeviceGateway -> MQTT: publish events/device/{deviceId}/ack\n{commandId, state: ON}
+MQTT -> Heat: events/device/{deviceId}/ack
+Heat -> Heat: State Manager\n(actual = ON)
+
+Web -> GW: GET /heating/{homeId}/status
+GW -> Heat: статус
+Heat --> GW: state=ON
+GW --> Web: state=ON
+Web --> User: Отопление включено
+
+@enduml

@@ -1,0 +1,60 @@
+@startuml c4-containers-to-be
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Диаграмма контейнеров (C4) — «Тёплый дом» To-Be
+
+LAYOUT_WITH_LEGEND()
+
+Person(user, "Пользователь", "SaaS, владелец дома")
+
+System_Boundary(ecosystem, "Экосистема «Тёплый дом»") {
+    Container(web, "Web App", "SPA", "UI управления и телеметрии")
+    Container(gateway, "API Gateway", "Go", "Маршрутизация, auth, rate limit")
+
+    Container(identity, "Identity Service", "Go", "Пользователи, дома, роли")
+    Container(devicePlatform, "Device Platform", "Go", "Каталог, самоподключение, адаптеры MQTT и легаси")
+    Container(heating, "Heating Service", "Go", "Управление отоплением")
+    Container(lighting, "Lighting Service", "Go", "Управление освещением")
+    Container(gates, "Gates Service", "Go", "Управление воротами")
+    Container(surv, "Surveillance Service", "Go", "Видеонаблюдение")
+    Container(telemetry, "Telemetry Service", "Go", "Сбор и запрос метрик")
+    Container(automation, "Automation Service", "Go", "Сценарии «если–то»")
+    Container(gatewayDevices, "Device Gateway", "Go", "Доставка команд, приём телеметрии, переход с легаси")
+
+    ContainerDb(pg, "Service Databases", "PostgreSQL / TimescaleDB", "Отдельные схемы сервисов в одном кластере MVP")
+    ContainerQueue(mqtt, "MQTT Broker", "Mosquitto", "Команды, подтверждения и телеметрия")
+}
+
+System_Ext(devices, "Устройства партнёров", "Датчики, реле, свет, ворота, камеры")
+
+Rel(user, web, "HTTPS")
+Rel(web, gateway, "HTTPS / JSON")
+Rel(gateway, identity, "HTTP")
+Rel(gateway, devicePlatform, "HTTP")
+Rel(gateway, heating, "HTTP")
+Rel(gateway, lighting, "HTTP")
+Rel(gateway, gates, "HTTP")
+Rel(gateway, surv, "HTTP")
+Rel(gateway, telemetry, "HTTP")
+Rel(gateway, automation, "HTTP")
+
+Rel(identity, pg, "SQL")
+Rel(devicePlatform, pg, "SQL")
+Rel(heating, pg, "SQL")
+Rel(lighting, pg, "SQL")
+Rel(gates, pg, "SQL")
+Rel(surv, pg, "SQL")
+Rel(telemetry, pg, "SQL")
+Rel(automation, pg, "SQL")
+Rel(gatewayDevices, pg, "SQL")
+
+Rel(heating, mqtt, "commands/heating, device ack", "MQTT")
+Rel(lighting, mqtt, "commands/lighting, device ack", "MQTT")
+Rel(gates, mqtt, "commands/gates, device ack", "MQTT")
+Rel(surv, mqtt, "commands/surveillance, device events", "MQTT")
+Rel(automation, mqtt, "telemetry, device events, commands", "MQTT")
+Rel(telemetry, mqtt, "telemetry", "MQTT")
+Rel(gatewayDevices, mqtt, "device commands, telemetry, ack", "MQTT")
+
+Rel(mqtt, devices, "MQTT")
+@enduml

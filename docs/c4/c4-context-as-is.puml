@@ -1,0 +1,17 @@
+@startuml C4_Context_WarmHouse
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title Диаграмма контекста (C4) — «Тёплый дом» As-Is
+
+Person(user, "Пользователь", "Владелец дома, работает через веб-интерфейс (~100 клиентов)")
+
+System(warmhouse, "Умный дом", "Монолит на Go. Управление отоплением, опрос температуры, регистрация модулей. Всё синхронно. PostgreSQL внутри системы.")
+
+System_Ext(heating, "Системы отопления", "Датчики температуры и реле в домах (~100 модулей). Подключаются специалистом.")
+
+Rel(user, warmhouse, "Управляет отоплением, смотрит температуру", "HTTPS")
+Rel(warmhouse, heating, "Управляет датчиками (команды вкл/выкл, sync)", "Синхронный запрос")
+Rel(heating, warmhouse, "Регистрируются при включении; отвечают на опрос температуры", "Синхронный ответ")
+
+SHOW_LEGEND()
+@enduml

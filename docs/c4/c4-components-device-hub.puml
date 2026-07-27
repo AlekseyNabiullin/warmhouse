@@ -1,0 +1,37 @@
+@startuml c4-components-device-hub
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Диаграмма компонентов — Device Gateway
+
+Container_Boundary(gateway, "Device Gateway") {
+    Component(mqttIn, "MQTT Ingress", "Go", "Приём сообщений от устройств")
+    Component(adapters, "Protocol Adapters", "Go", "Нормализация партнёрских протоколов")
+    Component(legacyAdapter, "Legacy Adapter", "Go", "Временно синхронно опрашивает старые устройства")
+    Component(cmdDisp, "Command Dispatcher", "Go", "Доставка команд на устройства")
+    Component(sessionMgr, "Device Registry", "Go", "Статус online и last seen")
+    Component(eventBridge, "Event Publisher", "Go", "Публикует нормализованные события в MQTT")
+}
+
+ContainerQueue_Ext(mqtt, "MQTT Broker", "Mosquitto")
+ContainerDb_Ext(db, "Device Platform DB", "PostgreSQL")
+System_Ext(devices, "Устройства партнёров", "Датчики и актуаторы")
+System_Ext(legacyDevices, "Старые устройства", "Синхронный протокол легаси")
+
+Rel(mqtt, cmdDisp, "Subscribe commands/+", "MQTT")
+Rel(eventBridge, cmdDisp, "Исходящая команда")
+Rel(cmdDisp, adapters, "Сериализация по протоколу")
+Rel(adapters, mqtt, "Publish command", "MQTT")
+Rel(mqtt, devices, "Команда", "MQTT")
+Rel(devices, mqtt, "Telemetry / ack", "MQTT")
+Rel(mqtt, mqttIn, "Subscribe", "MQTT")
+Rel(mqttIn, adapters, "Декодирование")
+Rel(adapters, sessionMgr, "Обновляет сессию")
+Rel(sessionMgr, db, "online / lastSeen", "SQL")
+Rel(adapters, eventBridge, "Нормализованное событие")
+Rel(eventBridge, mqtt, "events/telemetry, events/device/ack", "MQTT")
+Rel(cmdDisp, legacyAdapter, "Команда старому устройству")
+Rel(legacyAdapter, legacyDevices, "Синхронный запрос")
+Rel(legacyAdapter, eventBridge, "Ответ как нормализованное событие")
+
+SHOW_LEGEND()
+@enduml

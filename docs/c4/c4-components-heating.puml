@@ -1,0 +1,30 @@
+@startuml c4-components-heating
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Диаграмма компонентов — Heating Service
+
+Container_Boundary(heating, "Heating Service") {
+    Component(api, "API Controller", "Go", "REST: вкл/выкл, уставки, статус")
+    Component(cmdHandler, "Command Handler", "Go", "Валидация и исполнение команд отопления")
+    Component(stateMgr, "State Manager", "Go", "Текущее состояние модулей тепла")
+    Component(eventPub, "MQTT Publisher", "Go", "Публикация команд")
+    Component(eventCons, "MQTT Subscriber", "Go", "Подтверждения устройств")
+    Component(repo, "Repository", "Go", "Персистентность модулей и уставок")
+}
+
+Container_Ext(gateway, "API Gateway", "Go")
+ContainerDb_Ext(db, "Heating DB", "PostgreSQL")
+ContainerQueue_Ext(broker, "MQTT Broker", "Mosquitto")
+
+Rel(gateway, api, "Команды отопления", "HTTP")
+Rel(api, cmdHandler, "Обработать команду")
+Rel(cmdHandler, stateMgr, "Обновить желаемое состояние")
+Rel(cmdHandler, eventPub, "Опубликовать команду устройству")
+Rel(stateMgr, repo, "Сохранить состояние")
+Rel(repo, db, "SQL")
+Rel(eventPub, broker, "commands/heating/{deviceId}", "MQTT")
+Rel(broker, eventCons, "events/device/{deviceId}/ack", "MQTT")
+Rel(eventCons, stateMgr, "Подтвердить фактическое состояние")
+
+SHOW_LEGEND()
+@enduml

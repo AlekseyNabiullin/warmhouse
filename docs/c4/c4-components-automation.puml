@@ -1,0 +1,28 @@
+@startuml c4-components-automation
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Диаграмма компонентов — Automation Service
+
+Container_Boundary(automation, "Automation Service") {
+    Component(rulesApi, "Rules API", "Go", "CRUD сценариев «если–то»")
+    Component(engine, "Rule Engine", "Go", "Оценка условий и выбор действий")
+    Component(listener, "MQTT Event Listener", "Go", "Подписка на телеметрию и события устройств")
+    Component(dispatcher, "Action Dispatcher", "Go", "Публикация команд в MQTT")
+    Component(repo, "Rules Repository", "Go", "Хранение правил и расписаний")
+}
+
+Container_Ext(gateway, "API Gateway", "Go")
+ContainerDb_Ext(db, "Automation DB", "PostgreSQL")
+ContainerQueue_Ext(broker, "MQTT Broker", "Mosquitto")
+
+Rel(gateway, rulesApi, "CRUD сценариев", "HTTP")
+Rel(rulesApi, repo, "Сохранить / прочитать правило")
+Rel(repo, db, "SQL")
+Rel(broker, listener, "events/telemetry, events/device/+", "MQTT")
+Rel(listener, engine, "Входящее событие")
+Rel(engine, repo, "Загрузить активные правила")
+Rel(engine, dispatcher, "Сработавшие действия")
+Rel(dispatcher, broker, "commands/heating|lighting|gates/+", "MQTT")
+
+SHOW_LEGEND()
+@enduml
