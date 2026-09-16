@@ -38,6 +38,7 @@ func (h *SensorHandler) RegisterRoutes(router *gin.RouterGroup) {
 		sensors.PUT("/:id", h.UpdateSensor)
 		sensors.DELETE("/:id", h.DeleteSensor)
 		sensors.PATCH("/:id/value", h.UpdateSensorValue)
+		sensors.GET("/temperature/:sensorId", h.GetTemperatureBySensorID)
 		sensors.GET("/temperature/:location", h.GetTemperatureByLocation)
 	}
 }
