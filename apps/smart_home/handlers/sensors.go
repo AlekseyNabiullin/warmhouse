@@ -128,6 +128,34 @@ func (h *SensorHandler) GetTemperatureByLocation(c *gin.Context) {
 	})
 }
 
+// GetTemperatureBySensorID handles GET /api/v1/sensors/temperature/:sensorId
+func (h *SensorHandler) GetTemperatureBySensorID(c *gin.Context) {
+	sensorID := c.Param("sensorId")
+	if sensorID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Sensor ID is required"})
+		return
+	}
+
+	// Fetch temperature data from the external API
+	tempData, err := h.TemperatureService.GetTemperatureByID(sensorID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to fetch temperature data: %v", err),
+		})
+		return
+	}
+
+	// Return the temperature data
+	c.JSON(http.StatusOK, gin.H{
+		"sensor_id":   tempData.SensorID,
+		"value":       tempData.Value,
+		"unit":        tempData.Unit,
+		"status":      tempData.Status,
+		"timestamp":   tempData.Timestamp,
+		"description": tempData.Description,
+	})
+}
+
 // CreateSensor handles POST /api/v1/sensors
 func (h *SensorHandler) CreateSensor(c *gin.Context) {
 	var sensorCreate models.SensorCreate
